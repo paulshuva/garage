@@ -3,9 +3,11 @@ import tensorflow as tf
 
 from garage.misc.overrides import overrides
 from garage.tf.models import MLPModel
+from garage.tf.models.discrete_mlp_dueling_model import DiscreteMLPDuelingModel
+from garage.tf.q_functions import QFunction2
 
 
-class DiscreteMLPQFunction:
+class DiscreteMLPQFunction(QFunction2):
     """
     Discrete MLP Q Function.
 
@@ -47,35 +49,61 @@ class DiscreteMLPQFunction:
                  output_nonlinearity=None,
                  output_w_init=tf.glorot_uniform_initializer(),
                  output_b_init=tf.zeros_initializer(),
+                 dueling=False,
                  layer_normalization=False):
+        super().__init__(name)
+
+        self._env_spec = env_spec
+        self._hidden_sizes = hidden_sizes
+        self._hidden_nonlinearity = hidden_nonlinearity
+        self._hidden_w_init = hidden_w_init
+        self._hidden_b_init = hidden_b_init
+        self._output_nonlinearity = output_nonlinearity
+        self._output_w_init = output_w_init
+        self._output_b_init = output_b_init
+        self._dueling = dueling
+        self._layer_normalization = layer_normalization
+
+        self.models = []
         obs_dim = env_spec.observation_space.shape
         action_dim = env_spec.action_space.flat_dim
 
-        self._variable_scope = tf.VariableScope(reuse=False, name=name)
-        self.model = MLPModel(
-            output_dim=action_dim,
-            name=name,
-            hidden_sizes=hidden_sizes,
-            hidden_nonlinearity=hidden_nonlinearity,
-            hidden_w_init=hidden_w_init,
-            hidden_b_init=hidden_b_init,
-            output_nonlinearity=output_nonlinearity,
-            output_w_init=output_w_init,
-            output_b_init=output_b_init,
-            layer_normalization=layer_normalization)
+        if not dueling:
+            model = MLPModel(
+                output_dim=action_dim,
+                hidden_sizes=hidden_sizes,
+                hidden_nonlinearity=hidden_nonlinearity,
+                hidden_w_init=hidden_w_init,
+                hidden_b_init=hidden_b_init,
+                output_nonlinearity=output_nonlinearity,
+                output_w_init=output_w_init,
+                output_b_init=output_b_init,
+                layer_normalization=layer_normalization)
+        else:
+            model = DiscreteMLPDuelingModel(
+                output_dim=action_dim,
+                hidden_sizes=hidden_sizes,
+                hidden_nonlinearity=hidden_nonlinearity,
+                hidden_w_init=hidden_w_init,
+                hidden_b_init=hidden_b_init,
+                output_nonlinearity=output_nonlinearity,
+                output_w_init=output_w_init,
+                output_b_init=output_b_init,
+                layer_normalization=layer_normalization)
 
         obs_ph = tf.placeholder(tf.float32, (None, ) + obs_dim, name='obs')
 
         with tf.variable_scope(self._variable_scope):
-            self.model.build(obs_ph)
+            out = obs_ph
+            for model in self.models:
+                out = model.build(out)
 
-    @property
     def q_vals(self):
-        return self.model.networks['default'].outputs
+        return self.models[-1].networks['default'].outputs
 
     @property
     def input(self):
-        return self.model.networks['default'].input
+        return self.models[0].networks['default'].input
 
     @overrides
     def get_qval_sym(self, state_input, name):
@@ -85,6 +113,26 @@ class DiscreteMLPQFunction:
         Args:
             state_input: The state input tf.Tensor to the network.
             name: Network variable scope.
+
+        Return:
+            The tf.Tensor output of Discrete MLP QFunction.
         """
         with tf.variable_scope(self._variable_scope):
-            return self.model.build(state_input, name=name)
+            out = state_input
+            for model in self.models:
+                out = model.build(out, name=name)
+            return out
+
+    def clone(self, name):
+        return self.__class__(
+            name=name,
+            env_spec=self._env_spec,
+            hidden_sizes=self._hidden_sizes,
+            hidden_nonlinearity=self._hidden_nonlinearity,
+            hidden_w_init=self._hidden_w_init,
+            hidden_b_init=self._hidden_b_init,
+            output_nonlinearity=self._output_nonlinearity,
+            output_w_init=self._output_w_init,
+            output_b_init=self._output_b_init,
+            dueling=self._dueling,
+            layer_normalization=self._layer_normalization)
