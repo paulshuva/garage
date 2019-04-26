@@ -2,8 +2,8 @@
 import tensorflow as tf
 
 from garage.misc.overrides import overrides
+from garage.tf.models import MLPDuelingModel
 from garage.tf.models import MLPModel
-from garage.tf.models.discrete_mlp_dueling_model import DiscreteMLPDuelingModel
 from garage.tf.q_functions import QFunction2
 
 
@@ -41,7 +41,7 @@ class DiscreteMLPQFunction(QFunction2):
 
     def __init__(self,
                  env_spec,
-                 name='discrete_mlp_q_function',
+                 name=None,
                  hidden_sizes=(32, 32),
                  hidden_nonlinearity=tf.nn.relu,
                  hidden_w_init=tf.glorot_uniform_initializer(),
@@ -64,12 +64,11 @@ class DiscreteMLPQFunction(QFunction2):
         self._dueling = dueling
         self._layer_normalization = layer_normalization
 
-        self.models = []
-        obs_dim = env_spec.observation_space.shape
+        self.obs_dim = env_spec.observation_space.shape
         action_dim = env_spec.action_space.flat_dim
 
         if not dueling:
-            model = MLPModel(
+            self.model = MLPModel(
                 output_dim=action_dim,
                 hidden_sizes=hidden_sizes,
                 hidden_nonlinearity=hidden_nonlinearity,
@@ -80,7 +79,7 @@ class DiscreteMLPQFunction(QFunction2):
                 output_b_init=output_b_init,
                 layer_normalization=layer_normalization)
         else:
-            model = DiscreteMLPDuelingModel(
+            self.model = MLPDuelingModel(
                 output_dim=action_dim,
                 hidden_sizes=hidden_sizes,
                 hidden_nonlinearity=hidden_nonlinearity,
@@ -91,20 +90,22 @@ class DiscreteMLPQFunction(QFunction2):
                 output_b_init=output_b_init,
                 layer_normalization=layer_normalization)
 
-        obs_ph = tf.placeholder(tf.float32, (None, ) + obs_dim, name='obs')
+        self._initialize()
 
-        with tf.variable_scope(self._variable_scope):
-            out = obs_ph
-            for model in self.models:
-                out = model.build(out)
+    def _initialize(self):
+        obs_ph = tf.placeholder(
+            tf.float32, (None, ) + self.obs_dim, name='obs')
+
+        with tf.variable_scope(self.name, reuse=False) as self._variable_scope:
+            self.model.build(obs_ph)
 
     @property
     def q_vals(self):
-        return self.models[-1].networks['default'].outputs
+        return self.model.networks['default'].outputs
 
     @property
     def input(self):
-        return self.models[0].networks['default'].input
+        return self.model.networks['default'].input
 
     @overrides
     def get_qval_sym(self, state_input, name):
@@ -119,10 +120,7 @@ class DiscreteMLPQFunction(QFunction2):
             The tf.Tensor output of Discrete MLP QFunction.
         """
         with tf.variable_scope(self._variable_scope):
-            out = state_input
-            for model in self.models:
-                out = model.build(out, name=name)
-            return out
+            return self.model.build(state_input, name=name)
 
     def clone(self, name):
         """
@@ -143,3 +141,8 @@ class DiscreteMLPQFunction(QFunction2):
             output_b_init=self._output_b_init,
             dueling=self._dueling,
             layer_normalization=self._layer_normalization)
+
+    def __setstate__(self, state):
+        """Object.__setstate__."""
+        self.__dict__.update(state)
+        self._initialize()
