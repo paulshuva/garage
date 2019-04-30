@@ -18,7 +18,6 @@ class Policy2:
         self._name = name
         self._env_spec = env_spec
         self._variable_scope = tf.VariableScope(reuse=False, name=name)
-        self._models = []
 
     # Should be implemented by all policies
     def get_action(self, observation):
