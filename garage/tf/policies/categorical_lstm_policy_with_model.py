@@ -175,7 +175,9 @@ class CategoricalLSTMPolicyWithModel(StochasticPolicy2):
         with tf.variable_scope(self._variable_scope):
             outputs, _, _, _, _, _ = self.model.build(
                 all_input_var,
-                *self.model.networks['default'].inputs[1:4],
+                self.model.networks['default'].step_input,
+                self.model.networks['default'].step_hidden_input,
+                self.model.networks['default'].step_cell_input,
                 name=name)
 
         return dict(prob=outputs)

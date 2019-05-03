@@ -209,20 +209,29 @@ class Model(BaseModel):
                     network = Network()
                     network._inputs = inputs
                     network._outputs = self._build(*inputs, name)
-        spec = self.network_output_spec()
-        if spec:
+        in_spec = self.network_input_spec()
+        out_spec = self.network_output_spec()
+        spec = []
+        spec_args = []
+        if in_spec:
+            if isinstance(network.inputs, tuple):
+                assert len(in_spec) == len(network.inputs), (
+                    'network_input_spec must have same length as inputs!')
+                spec.extend(in_spec)
+                spec_args.extend(network.inputs)
+        if out_spec:
+            if isinstance(network.outputs, tuple):
+                assert len(out_spec) == len(network.outputs), (
+                    'network_output_spec must have same length as outputs!')
+                spec.extend(out_spec)
+                spec_args.extend(network.outputs)
+
+        if in_spec or out_spec:
             c = namedtuple(network_name,
                            [*spec, 'input', 'output', 'inputs', 'outputs'])
-            if isinstance(network.outputs, tuple):
-                assert len(spec) == len(network.outputs), (
-                    'network_output_spec must have same length as outputs!')
-                self._networks[network_name] = c(
-                    *network.outputs, network.input, network.output,
-                    network.inputs, network.outputs)
-            else:
-                self._networks[network_name] = c(
-                    network.outputs, network.input, network.output,
-                    network.inputs, network.outputs)
+            self._networks[network_name] = c(*spec_args, network.input,
+                                             network.output, network.inputs,
+                                             network.outputs)
         else:
             self._networks[network_name] = network
 
@@ -247,6 +256,15 @@ class Model(BaseModel):
             output: Tensor output(s) of the model.
         """
         pass
+
+    def network_input_spec(self):
+        """
+        Network input spec.
+
+        Return:
+            *inputs (list[str]): List of key(str) for the network inputs.
+        """
+        return []
 
     def network_output_spec(self):
         """
